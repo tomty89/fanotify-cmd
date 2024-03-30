@@ -210,8 +210,8 @@ main(int argc, char *argv[])
             if (fanotify_mark(fd, FAN_MARK_ADD, mask, AT_FDCWD, argv[i]) == -1)
                 throw Errno(std::string("fanotify_mark failed for ") + argv[i]);
 
-        Proc self(getpid());
-        for (;;) {
+        bool done = false;
+        while (!done) {
             char buf[8192];
             ssize_t received = read(fd, buf, sizeof buf);
             switch (received) {
@@ -220,38 +220,10 @@ main(int argc, char *argv[])
                 case -1:
                     throw Errno("read");
                 default: {
-                    const char *e = buf + received;
                     const struct fanotify_event_metadata *data;
-                    for (const char *p = buf; p < e; ) {
-                        data = (const struct fanotify_event_metadata *)p;
-                        FDCloser fd(data->fd);
-                        std::cout
-                            << "mask: " << FanMask(data->mask)
-                            << ", fd: " << data->fd
-                            << ", pid: " << data->pid
-                            << ", file: " << self.filePath(data->fd)
-                            << ", command: " << Proc(data->pid).commandLine()
-                            << "\n";
-                        const char *emsg = p + data->event_len;
-                        for (p += sizeof *data; p < emsg; ) {
-                           auto hdr = (fanotify_event_info_header *)p;
-                           p += hdr->len;
-                           std::cout << " got header type " << int(hdr->info_type) << "\n";
-                           switch (hdr->info_type) {
-                              case FAN_EVENT_INFO_TYPE_FID: {
-                                 std::cout << " got FID header\n";
-                                 auto *fid = (const fanotify_event_info_fid *)hdr;
-                                 getppid();
-                                 break;
-                              }
-                              case FAN_EVENT_INFO_TYPE_DFID: {
-                                 std::cout << " got DFID header\n";
-                                 break;
-                              }
-
-                           }
-                        }
-                    }
+                    data = (const struct fanotify_event_metadata *)buf;
+                    std::cout << data->pid << "\n";
+                    done = true;
                     break;
                 }
             }
@@ -259,5 +231,6 @@ main(int argc, char *argv[])
     }
     catch (const std::exception &ex) {
         std::cerr << "exception: " << ex << "\n";
+        return 1;
     }
 }
